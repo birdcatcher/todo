@@ -11,7 +11,100 @@ import org.eclipse.jetty.servlet.*;
 import org.json.*;
  
 public class AppServer { 
+    // 3 steps including setup db, implement servlets, map url to servlets
+
     private static boolean debug = true;
+
+    /***************** Step 1 Config DB connection ****************/
+    // Oracle DB config
+    // private static String dbURL = "jdbc:oracle:thin:@host:port:db";
+    // private static String dbUser= "*****";
+    // private static String dbPass= "*****";
+
+    // Embedded HSQLDB config
+    // db.sh to start server in standalone mode and use dbtool.sh to open UI tool
+    // UI tool choose server type and then use test script to create some test data
+    // Make sure, in UI tool, use commit commnad to make data persistent
+    private static String dbURL = "jdbc:hsqldb:file:test";
+    private static String dbUser= "SA";
+    private static String dbPass= "";
+
+    // init DB tables
+    public static void initDB() {
+        // check if tables exist
+        if (execute( "select 1 from task" ) == null) {
+            debug("===> DB: Initializing ...");
+            execute( "DROP TABLE task" );
+            execute( "CREATE TABLE task ( name VARCHAR(255) )" );
+            execute( "INSERT INTO task ( name ) VALUES ( 'Buy Food' )" );
+        } else {
+            debug("===> DB: Ready :)");            
+        }
+    }
+
+    /********************* Step 2 Implement Servlet classes ************************/
+
+    // IMPORTANT: inner class must be "public static class"
+    // Servlet for URL /data/
+    public static class ToDo extends DefaultServlet {
+        @Override
+        public void doGet(HttpServletRequest request, HttpServletResponse response) 
+            throws ServletException, IOException 
+        {
+            // get params, note how to get array
+            // String[] id = request.getParameterValues("id[]");
+            // debug("===> Params: "+String.join(",", id));
+
+            // do db works
+            JSONArray json1 = execute( "select * from task" );
+            debug("===> Response: "+json1);
+
+            // return response
+            response.setContentType("application/json");
+            response.setStatus(HttpServletResponse.SC_OK);
+            response.getWriter().println(""+json1);
+        }
+
+        @Override
+        public void doPost(HttpServletRequest request, HttpServletResponse response) 
+            throws ServletException, IOException 
+        {
+            try {
+                // get request content in string format
+                StringBuffer jb = new StringBuffer();
+                BufferedReader reader = request.getReader();
+                String line = null;
+                while ((line = reader.readLine()) != null)
+                    jb.append(line);
+                debug("===> Request: "+jb.toString());
+                // convert string to json object
+                JSONObject json = new JSONObject(jb.toString());
+                // get various parts of input using key-value pair
+                debug("===> Task: "+json.getString("name"));
+    
+                // do db work
+                execute( "insert into task (name) values('"+json.getString("name")+"')" );
+            } catch (Exception e) { 
+                e.printStackTrace();
+            }
+
+            // return response
+            response.setContentType("application/json");
+            response.setStatus(HttpServletResponse.SC_OK);
+            response.getWriter().println("{}");
+        }
+    }
+
+    /**************** Step 3 Map URL to Servlet *********************/
+
+    public static void configURL(ServletContextHandler context) throws Exception {
+        // add a simple Servlet at "/data/*"
+        ServletHolder holderData = new ServletHolder("data", ToDo.class);
+        context.addServlet(holderData, "/data/*");
+    }
+
+
+    /*************** Main entry to start server *********************/
 
     public static void main(String[] args) throws Exception 
     {
@@ -33,79 +126,16 @@ public class AppServer {
         context.addServlet(holderStatic, "/static/*");
         context.addServlet(holderStatic, "/*");
 
-        // add a simple Servlet at "/data/*"
-        ServletHolder holderData = new ServletHolder("data", ToDo.class);
-        context.addServlet(holderData, "/data/*");
+        // setup DB
+        initDB();
+        // setup URL mapping
+        configURL(context);
 
         server.start();
         server.join();
     }
 
-    /********************* Servlet Classes ************************/
-    // IMPORTANT: inner class must be "public static class"
-
-    // Servlet for COA
-    public static class ToDo extends DefaultServlet {
-
-        @Override
-        public void doGet(HttpServletRequest request, HttpServletResponse response) throws ServletException, IOException 
-        {
-            // get params, note how to get array
-            // String[] id = request.getParameterValues("id[]");
-            // debug("===> Params: "+String.join(",", id));
-
-            // do db works
-            JSONArray json1 = execute( "select * from task" );
-
-            debug("===> Response: "+json1);
-
-            // return response
-            response.setContentType("application/json");
-            response.setStatus(HttpServletResponse.SC_OK);
-            response.getWriter().println(""+json1);
-        }
-
-        @Override
-        public void doPost(HttpServletRequest request, HttpServletResponse response) throws ServletException, IOException 
-        {
-            try {
-                StringBuffer jb = new StringBuffer();
-                BufferedReader reader = request.getReader();
-                String line = null;
-                while ((line = reader.readLine()) != null)
-                    jb.append(line);
-                debug("===> Request: "+jb.toString());
-    
-                JSONObject json = new JSONObject(jb.toString());
-                debug("===> Task: "+json.getString("name"));
-    
-                execute( "insert into task (name) values('"+json.getString("name")+"')" );
-            } catch (Exception e) { 
-                e.printStackTrace();
-            }
-
-            // return response
-            response.setContentType("application/json");
-            response.setStatus(HttpServletResponse.SC_OK);
-            response.getWriter().println("{}");
-        }
-
-    }
-
     /********************* Util Methods ************************/
-
-    // Oracle DB config
-    // private static String dbURL = "jdbc:oracle:thin:@host:port:db";
-    // private static String dbUser= "*****";
-    // private static String dbPass= "*****";
-
-    // Embedded HSQLDB config
-    // db.sh to start server in standalone mode and use dbtool.sh to open UI tool
-    // UI tool choose server type and then use test script to create some test data
-    // Make sure, in UI tool, use commit commnad to make data persistent
-    private static String dbURL = "jdbc:hsqldb:file:test";
-    private static String dbUser= "SA";
-    private static String dbPass= "";
 
     // execute database statement
     public static JSONArray execute(String sql) {
